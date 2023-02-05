@@ -1,7 +1,12 @@
+using System;
 using System.Net;
+using System.Net.Mime;
+using System.Text;
+using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using static System.Net.WebRequestMethods;
 
 namespace Fetcher
 {
@@ -14,17 +19,42 @@ namespace Fetcher
             _logger = loggerFactory.CreateLogger<FetchData>();
         }
 
-        [Function("FetchData")]
-        public HttpResponseData Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
+        [Function("fetchBlob")]
+        public async Task<HttpResponseData> FetchBlob
+        (
+            [HttpTrigger(AuthorizationLevel.Function, Http.Get)] HttpRequestData req,
+            [BlobInput("static-files/index.html", Connection = "FetcherConnection")] string indexHtml,
+            string name
+        )
         {
-            _logger.LogInformation("C# HTTP trigger function processed a request.");
+            _logger.LogInformation("C# HTTP trigger function {FncName} processed a request.", "fetchBlob");
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "text/plain; charset=utf-8");
+            return await PrepareResponseAsync(req.CreateResponse(HttpStatusCode.OK), indexHtml, name);
+        }
 
-            response.WriteString("Welcome to Azure Functions!");
+        [Function("fetchLocal")]
+        public async Task<HttpResponseData> FetchLocal
+        (
+            [HttpTrigger(AuthorizationLevel.Function, Http.Get)] HttpRequestData req,
+            string name
+        )
+        {
+            _logger.LogInformation("C# HTTP trigger function {FncName} processed a request.", "fetchLocal");
 
-            return response;
+            var path = System.IO.Path.Join(Environment.CurrentDirectory, "static/index.html");
+            var indexHtml = await System.IO.File.ReadAllTextAsync(path);
+
+            return await PrepareResponseAsync(req.CreateResponse(HttpStatusCode.OK), indexHtml, name);
+        }
+
+        private static async Task<HttpResponseData> PrepareResponseAsync(HttpResponseData httpResponseData, string indexHtml, string name)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+                indexHtml = indexHtml.Replace("Hi!", $"Hi, {name}!");
+
+            httpResponseData.Headers.Add("Content-Type", MediaTypeNames.Text.Html);
+            await httpResponseData.WriteStringAsync(indexHtml, Encoding.UTF8);
+            return httpResponseData;
         }
     }
 }
